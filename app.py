@@ -260,34 +260,6 @@ def debug():
     })
 
 
-# ── Entry point ────────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
-
-@app.route('/debug', methods=['GET'])
-def debug():
-    import glob
-    cached_files = glob.glob(os.path.join(ARIMA_CACHE, '*.pkl'))
-    return jsonify({
-        'hf_repo_id'         : HF_REPO_ID,
-        'hf_token_set'       : HF_TOKEN is not None,
-        'cache_dir'          : ARIMA_CACHE,
-        'cached_models'      : sorted([os.path.basename(f) for f in cached_files]),
-        'preloaded_in_memory': sorted(list(arima_models_cache.keys())),
-        'metadata_keys'      : list(metadata.keys()),
-        'stores_in_meta'     : metadata.get('arima', {}).get('stores', []),
-        'rules_loaded'       : len(rules_df),
-    })
-
-
-# ── Entry point ────────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
-
 @app.route('/test-download', methods=['GET'])
 def test_download():
     """Test downloading one model file - for debugging only"""
@@ -317,3 +289,9 @@ def test_download():
             'error': str(e),
             'trace': traceback.format_exc(),
         }), 500
+
+
+# ── Entry point ────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
