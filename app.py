@@ -100,6 +100,28 @@ except Exception as e:
     metadata = {}
     rules_df = pd.DataFrame()
 
+# ── Pre-download ALL ARIMA models at startup ───────────────────────────────
+# This avoids per-request download timeouts on Render free tier.
+# Models are large (10–30 MB each via LFS/XET) so we load them all at boot.
+arima_models_cache = {}
+
+def preload_all_arima():
+    stores = metadata.get('arima', {}).get('stores', [])
+    logger.info(f'Pre-loading {len(stores)} ARIMA models at startup...')
+    for store_id in stores:
+        try:
+            model = load_arima(store_id)
+            if model is not None:
+                arima_models_cache[store_id] = model
+                logger.info(f'  [OK] {store_id}')
+            else:
+                logger.warning(f'  [FAIL] {store_id} - model is None')
+        except Exception as e:
+            logger.error(f'  [ERROR] {store_id}: {e}')
+    logger.info(f'Pre-load complete: {len(arima_models_cache)}/{len(stores)} models loaded')
+
+preload_all_arima()
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 def recommend_products(cart_items, top_n=5):
@@ -161,9 +183,12 @@ def forecast():
     if not store_id:
         return jsonify({'error': 'store_id is required'}), 400
 
-    model = load_arima(store_id)
+    # Check in-memory cache first (preloaded at startup), then try downloading
+    model = arima_models_cache.get(store_id) or load_arima(store_id)
+    if model is not None:
+        arima_models_cache[store_id] = model  # cache for next request
     if model is None:
-        available = metadata.get('arima', {}).get('stores', [])
+        available = list(arima_models_cache.keys()) or metadata.get('arima', {}).get('stores', [])
         return jsonify({'error': f'No model for "{store_id}"', 'available': available}), 404
 
     try:
@@ -234,8 +259,9 @@ def debug():
         'hf_token_set' : HF_TOKEN is not None,
         'cache_dir'    : ARIMA_CACHE,
         'cached_models': [os.path.basename(f) for f in cached_files],
+        'preloaded_in_memory': list(arima_models_cache.keys()),
         'metadata_keys': list(metadata.keys()),
         'stores_in_meta': metadata.get('arima', {}).get('stores', []),
         'rules_loaded' : len(rules_df),
     })
-          
+  
