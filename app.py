@@ -190,8 +190,16 @@ def forecast():
     if model is not None:
         arima_models_cache[store_id] = model
     if model is None:
-        available = list(arima_models_cache.keys()) or metadata.get('arima', {}).get('stores', [])
-        return jsonify({'error': f'No model for "{store_id}"', 'available': available}), 404
+        available = metadata.get('arima', {}).get('stores', [])
+        local_path = os.path.join(ARIMA_CACHE, f'arima_{store_id}.pkl')
+        return jsonify({
+            'error'    : f'No model for "{store_id}"',
+            'available': available,
+            'debug'    : {
+                'pkl_on_disk': os.path.exists(local_path),
+                'hint': 'Check Render logs for [load_arima] Unpickle failed — likely pmdarima version mismatch'
+            }
+        }), 404
 
     try:
         forecast_vals, conf_int = model.predict(n_periods=forecast_days, return_conf_int=True)
@@ -289,9 +297,3 @@ def test_download():
             'error': str(e),
             'trace': traceback.format_exc(),
         }), 500
-
-
-# ── Entry point ────────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
