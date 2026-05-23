@@ -64,16 +64,22 @@ def load_rules():
     return pd.read_csv(path)
 
 def load_arima(store_id):
-    filename   = f'arima_models/arima_{store_id}.pkl'
-    local_path = os.path.join(ARIMA_CACHE, f'arima_{store_id}.pkl')
-    if not os.path.exists(local_path):
+    # Try exact casing first, then uppercase, then lowercase
+    for sid in [store_id, store_id.upper(), store_id.lower()]:
+        filename   = f'arima_models/arima_{sid}.pkl'
+        local_path = os.path.join(ARIMA_CACHE, f'arima_{sid}.pkl')
+        if os.path.exists(local_path):
+            with open(local_path, 'rb') as f:
+                return pickle.load(f)
         try:
             download_from_hf(filename, ARIMA_CACHE)
+            if os.path.exists(local_path):
+                with open(local_path, 'rb') as f:
+                    return pickle.load(f)
         except Exception as e:
-            logger.error(f'Could not download {filename}: {e}')
-            return None
-    with open(local_path, 'rb') as f:
-        return pickle.load(f)
+            logger.warning(f'Could not download {filename}: {e}')
+    logger.error(f'No ARIMA model found for store_id={store_id}')
+    return None
 
 
 # ── Load shared assets at startup ─────────────────────────────────────────
@@ -143,7 +149,7 @@ def get_stores():
 @app.route('/forecast', methods=['POST'])
 def forecast():
     body          = request.get_json(force=True, silent=True) or {}
-    store_id      = body.get('store_id', '').strip().upper()
+    store_id      = body.get('store_id', '').strip()  # keep original casing to match model filenames
     forecast_days = min(int(body.get('forecast_days', 30)), 90)
 
     if not store_id:
@@ -209,4 +215,5 @@ def get_metrics():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-      
+
+
