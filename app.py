@@ -118,25 +118,9 @@ except Exception as e:
     metadata = {}
     rules_df = pd.DataFrame()
 
-# ── Pre-load all ARIMA models at startup ──────────────────────────────────
+# ── Lazy per-request cache (avoids OOM on Render free 512MB) ──────────────
+# Models are downloaded on first request per store, then kept in memory.
 arima_models_cache = {}
-
-def preload_all_arima():
-    stores = metadata.get('arima', {}).get('stores', [])
-    logger.info(f'Pre-loading {len(stores)} ARIMA models...')
-    for store_id in stores:
-        try:
-            model = load_arima(store_id)
-            if model is not None:
-                arima_models_cache[store_id] = model
-                logger.info(f'  [OK] {store_id}')
-            else:
-                logger.warning(f'  [FAIL] {store_id}')
-        except Exception as e:
-            logger.error(f'  [ERROR] {store_id}: {e}')
-    logger.info(f'Pre-load done: {len(arima_models_cache)}/{len(stores)} loaded')
-
-preload_all_arima()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -258,6 +242,28 @@ def get_metrics():
         },
         'trained_on': metadata.get('trained_on'),
     })
+
+
+@app.route('/debug', methods=['GET'])
+def debug():
+    import glob
+    cached_files = glob.glob(os.path.join(ARIMA_CACHE, '*.pkl'))
+    return jsonify({
+        'hf_repo_id'         : HF_REPO_ID,
+        'hf_token_set'       : HF_TOKEN is not None,
+        'cache_dir'          : ARIMA_CACHE,
+        'cached_models'      : sorted([os.path.basename(f) for f in cached_files]),
+        'preloaded_in_memory': sorted(list(arima_models_cache.keys())),
+        'metadata_keys'      : list(metadata.keys()),
+        'stores_in_meta'     : metadata.get('arima', {}).get('stores', []),
+        'rules_loaded'       : len(rules_df),
+    })
+
+
+# ── Entry point ────────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
 
 
 @app.route('/debug', methods=['GET'])
