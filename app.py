@@ -64,21 +64,27 @@ def load_rules():
     return pd.read_csv(path)
 
 def load_arima(store_id):
-    # Try exact casing first, then uppercase, then lowercase
     for sid in [store_id, store_id.upper(), store_id.lower()]:
         filename   = f'arima_models/arima_{sid}.pkl'
         local_path = os.path.join(ARIMA_CACHE, f'arima_{sid}.pkl')
+        logger.info(f'[load_arima] sid={sid} exists={os.path.exists(local_path)} repo={HF_REPO_ID}')
         if os.path.exists(local_path):
-            with open(local_path, 'rb') as f:
-                return pickle.load(f)
+            try:
+                with open(local_path, 'rb') as f:
+                    return pickle.load(f)
+            except Exception as e:
+                logger.error(f'[load_arima] Unpickle failed {local_path}: {e}')
+                return None
         try:
+            logger.info(f'[load_arima] Downloading {filename} from HF...')
             download_from_hf(filename, ARIMA_CACHE)
+            logger.info(f'[load_arima] Download done, exists={os.path.exists(local_path)}')
             if os.path.exists(local_path):
                 with open(local_path, 'rb') as f:
                     return pickle.load(f)
         except Exception as e:
-            logger.warning(f'Could not download {filename}: {e}')
-    logger.error(f'No ARIMA model found for store_id={store_id}')
+            logger.warning(f'[load_arima] Download failed {filename}: {e}')
+    logger.error(f'[load_arima] No model for store_id={store_id} HF_REPO_ID={HF_REPO_ID}')
     return None
 
 
@@ -215,5 +221,21 @@ def get_metrics():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+      
 
 
+@app.route('/debug', methods=['GET'])
+def debug():
+    """Quick diagnostics endpoint - remove in production"""
+    import glob
+    cached_files = glob.glob(os.path.join(ARIMA_CACHE, '*.pkl'))
+    return jsonify({
+        'hf_repo_id'   : HF_REPO_ID,
+        'hf_token_set' : HF_TOKEN is not None,
+        'cache_dir'    : ARIMA_CACHE,
+        'cached_models': [os.path.basename(f) for f in cached_files],
+        'metadata_keys': list(metadata.keys()),
+        'stores_in_meta': metadata.get('arima', {}).get('stores', []),
+        'rules_loaded' : len(rules_df),
+    })
+          
