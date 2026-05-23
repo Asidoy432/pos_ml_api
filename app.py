@@ -266,7 +266,7 @@ def debug():
     cached_files = glob.glob(os.path.join(ARIMA_CACHE, '*.pkl'))
     return jsonify({
         'hf_repo_id'         : HF_REPO_ID,
-        'hf_token_set'       : HF_TOKEN,
+        'hf_token_set'       : HF_TOKEN is not None,
         'cache_dir'          : ARIMA_CACHE,
         'cached_models'      : sorted([os.path.basename(f) for f in cached_files]),
         'preloaded_in_memory': sorted(list(arima_models_cache.keys())),
@@ -280,3 +280,34 @@ def debug():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
+
+
+@app.route('/test-download', methods=['GET'])
+def test_download():
+    """Test downloading one model file - for debugging only"""
+    import traceback
+    store_id = request.args.get('store', 'BAR-01')
+    filename = f'arima_models/arima_{store_id}.pkl'
+    url = hf_direct_url(filename)
+    headers = {}
+    if HF_TOKEN:
+        headers['Authorization'] = f'Bearer {HF_TOKEN}'
+    try:
+        resp = requests.get(url, headers=headers, stream=True, timeout=30)
+        first_bytes = b''
+        for chunk in resp.iter_content(chunk_size=1024):
+            first_bytes = chunk
+            break
+        return jsonify({
+            'url'         : url,
+            'status_code' : resp.status_code,
+            'headers'     : dict(resp.headers),
+            'first_bytes' : first_bytes[:20].hex(),
+            'token_used'  : HF_TOKEN is not None,
+        })
+    except Exception as e:
+        return jsonify({
+            'url'  : url,
+            'error': str(e),
+            'trace': traceback.format_exc(),
+        }), 500
