@@ -268,6 +268,62 @@ def debug():
     })
 
 
+@app.route('/debug-pickle', methods=['GET'])
+def debug_pickle():
+    """Download one model and report the exact error without deleting it."""
+    import traceback, importlib
+    store_id   = request.args.get('store', 'BAR-01')
+    filename   = f'arima_models/arima_{store_id}.pkl'
+    local_path = os.path.join(ARIMA_CACHE, f'arima_{store_id}.pkl')
+
+    # Force fresh download
+    if os.path.exists(local_path):
+        os.remove(local_path)
+
+    download_error = None
+    try:
+        download_from_hf(filename, ARIMA_CACHE)
+    except Exception as e:
+        download_error = str(e)
+
+    file_size   = os.path.getsize(local_path) if os.path.exists(local_path) else 0
+    first_bytes = ''
+    if os.path.exists(local_path):
+        with open(local_path, 'rb') as f:
+            first_bytes = f.read(8).hex()
+
+    unpickle_error = None
+    model_type     = None
+    try:
+        with open(local_path, 'rb') as f:
+            model = pickle.load(f)
+        model_type = str(type(model))
+    except Exception as e:
+        unpickle_error = traceback.format_exc()
+
+    # Installed package versions
+    versions = {}
+    for pkg in ['pmdarima', 'statsmodels', 'numpy', 'scipy', 'sklearn']:
+        try:
+            versions[pkg] = importlib.import_module(pkg).__version__
+        except Exception:
+            try:
+                import importlib.metadata
+                versions[pkg] = importlib.metadata.version(pkg)
+            except Exception:
+                versions[pkg] = 'unknown'
+
+    return jsonify({
+        'store_id'      : store_id,
+        'download_error': download_error,
+        'file_size_bytes': file_size,
+        'first_bytes_hex': first_bytes,
+        'unpickle_error': unpickle_error,
+        'model_type'    : model_type,
+        'installed_versions': versions,
+    })
+
+
 @app.route('/test-download', methods=['GET'])
 def test_download():
     """Test downloading one model file - for debugging only"""
